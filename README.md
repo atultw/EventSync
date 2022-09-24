@@ -171,3 +171,4 @@ init(from record: Record) throws {
 ```
 
 4.  Write migrations for your local database. For example, run `ALTER TABLE`s for sqlite. This is not necessary if you use Realm or another schemaless store - although you may want to insert default values for existing objects. 
+4.  IMPORTANT! Change the `schemaVersion` that gets passed to EventSync's backup functions. If a user starts using the new features on one device, and later updates their other device, you want the second device not to use default values but to pick up where device 1 left off. This can be achieved through updating the schemaVersion.

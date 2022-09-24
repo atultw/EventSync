@@ -72,3 +72,21 @@ extension TodoUpdateEvent: Event {
         record["newModel"] = try JSONEncoder().encode(self.newModel) as NSData
     }
 }
+
+// MARK: Counter
+
+struct IncrementEvent {
+    var id: UUID = UUID()
+}
+
+extension IncrementEvent: Event {
+    static var typeID: String = "IncrementEvent"
+
+    func to(record: Record) throws {
+        record["id"] = self.id.uuidString as NSString
+    }
+    
+    init(from record: Record) throws {
+        self.id = UUID(uuidString: record["id"] as! String)!
+    }
+}

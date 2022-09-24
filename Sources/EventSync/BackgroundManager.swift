@@ -19,7 +19,8 @@ public class BackgroundManager {
     let autoUploadWhenOnline: Bool
 
     private let errors = PassthroughSubject<Error, Never>()
-
+    
+    /// Starts the background listener on queue "EventSyncNetworkMonitor"
     public init(managing sync: Sync,
                 autoDownloadWhenOnline: Bool = true,
                 autoUploadWhenOnline: Bool = true

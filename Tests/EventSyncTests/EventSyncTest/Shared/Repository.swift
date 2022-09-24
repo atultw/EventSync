@@ -32,22 +32,12 @@ class Repository: ObservableObject {
                                          autoUploadWhenOnline: true)
         Task {
             listenForEvents()
-            if !sync.previouslySynced {
-                // populate the device with a backup
-                do {
-                    try await restoreFromBackup()
-                } catch {
-                    // no available backups.
-                    
-                    // ask the user if they want to restore manually (for example via airdrop from another device)
-                    
-                    // if not, set up a blank db (this is probably the first device)
-                    initializeDb()
-                }
+            if UserDefaults.standard.integer(forKey: "SchemaVersion") != getAppVersion() {
+                await restoreFromBackup(ver: getAppVersion())
             } else {
                 do {
-                    try await sync.cleanBackups(keepMostRecent: 1, version: 1)
-                    try await sync.uploadBackup(schemaVersion: 1, from: URL(string: db.path)!)
+                    try await sync.uploadBackup(schemaVersion: getAppVersion(), from: URL(string: db.path)!)
+                    try await sync.cleanBackups(keepMostRecent: 2, version: getAppVersion())
                 } catch {
                     print("error while uploading or cleaning backups:", error)
                 }
@@ -60,18 +50,34 @@ class Repository: ObservableObject {
         
     }
     
-    func restoreFromBackup() async throws {
-        try await sync.restoreFromBackup(version: 1) { url in
-            do {
-                try DatabaseQueue(path: url.absoluteString).backup(to: self.db)
-                // successful
-                return true
-            } catch {
-                print(error)
-                // try another one
-                return false
-            }
+    func restoreFromBackup(ver: Int) async {
+        if ver <= 0 {
+            initializeDb()
+            return
         }
+        do {
+            try await sync.restoreFromBackup(version: ver) { url in
+                do {
+                    try DatabaseQueue(path: url.absoluteString).backup(to: self.db)
+                    self.initializeDb()
+                    // successful
+                    return true
+                } catch {
+                    print(error)
+                    // try another one
+                    return false
+                }
+            }
+        } catch {
+            await restoreFromBackup(ver: ver-1)
+        }
+
+    }
+    
+    // MARK: Version
+    func getAppVersion() -> Int {
+        // Make sure to change this after every schema update
+        return 2
     }
     
     func initializeDb() {
@@ -100,6 +106,17 @@ class Repository: ObservableObject {
         } catch {
             print("migration failed: ", error.localizedDescription)
         }
+        
+        do {
+            try db.write {
+                try $0.execute(sql: "CREATE TABLE counter (id INT PRIMARY KEY, count INT);")
+                try $0.execute(sql: "INSERT INTO counter (id, count) VALUES (1, 0) ")
+            }
+        } catch {
+            print("table already exists: ", error.localizedDescription)
+        }
+        
+        UserDefaults.standard.set(getAppVersion(), forKey: "SchemaVersion")
     }
     
     func listenForEvents() {
@@ -115,6 +132,17 @@ class Repository: ObservableObject {
                 
             }
             .store(in: &self.subscriptions)
+        
+        sync.publisher(for: IncrementEvent.self).sink { _ in
+            do {
+                try self.db.write {
+                    try $0.execute(sql: "UPDATE counter SET count = count + 1 WHERE id = 1")
+                }
+            } catch {
+                print("Could not process remote event: \(error)")
+            }
+        }
+        .store(in: &self.subscriptions)
         
         sync.publisher(for: TodoDeletionEvent.self)
             .sink { val in
